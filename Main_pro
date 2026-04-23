@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Golf Match Tracker</title>
+
+<link rel="icon" href="https://cdn-icons-png.flaticon.com/512/854/854878.png">
+
+<style>
+:root {
+    --bg:#f2f4f7;
+    --card:#fff;
+    --text:#111;
+}
+@media (prefers-color-scheme: dark){
+:root{
+    --bg:#0f172a;
+    --card:#1e293b;
+    --text:#fff;
+}}
+body{
+    margin:0;
+    font-family:-apple-system;
+    background:var(--bg);
+    color:var(--text);
+}
+.header{
+    padding:16px;
+    font-size:20px;
+    font-weight:bold;
+}
+.card{
+    background:var(--card);
+    margin:10px;
+    padding:12px;
+    border-radius:16px;
+}
+.grid{
+    display:grid;
+    grid-template-columns:repeat(6,1fr);
+    gap:6px;
+}
+input{
+    height:34px;
+    border-radius:8px;
+    border:1px solid #ccc;
+    text-align:center;
+}
+.avatar{
+    width:28px;height:28px;border-radius:50%;
+    background:linear-gradient(135deg,#60a5fa,#34d399);
+    display:inline-flex;align-items:center;justify-content:center;
+    color:#fff;font-size:12px;margin-right:6px;
+}
+.tabbar{
+    position:fixed;bottom:0;width:100%;display:flex;
+    background:var(--card);border-top:1px solid #ddd;
+}
+.tab{flex:1;text-align:center;padding:10px;}
+.page{display:none;}
+.page.active{display:block;}
+.rank{display:flex;justify-content:space-between;padding:6px 0;}
+button{
+    margin:10px;width:calc(100% - 20px);
+    padding:12px;border-radius:12px;border:none;
+    background:#111;color:#fff;
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">🏌️ Golf Match</div>
+
+<div id="score" class="page active">
+    <div class="card">
+        <b>Par</b>
+        <div class="grid" id="parRow"></div>
+    </div>
+    <div id="players"></div>
+    <button onclick="addPlayer()">+ Player</button>
+</div>
+
+<div id="rank" class="page">
+    <div class="card" id="leaderboard"></div>
+    <button onclick="share()">📤 分享图片</button>
+    <button onclick="generateLink()">🔗 分享链接</button>
+</div>
+
+<div id="stats" class="page">
+    <div class="card">
+        <canvas id="chart"></canvas>
+    </div>
+</div>
+
+<div class="tabbar">
+    <div class="tab" onclick="switchTab('score')">记分</div>
+    <div class="tab" onclick="switchTab('rank')">排名</div>
+    <div class="tab" onclick="switchTab('stats')">统计</div>
+</div>
+
+<!-- 分享卡片 -->
+<div id="shareCard" style="position:absolute;left:-9999px;width:320px;background:#fff;padding:16px;border-radius:16px;">
+    <h3>🏌️ Golf Result</h3>
+    <div id="shareContent"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas"></script>
+
+<script>
+let par = JSON.parse(localStorage.getItem("par")) || Array(18).fill(4);
+
+function switchTab(id){
+    document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
+    document.getElementById(id).classList.add("active");
+}
+
+function renderPar(){
+    let html="";
+    par.forEach((p,i)=>{
+        html+=`<input value="${p}" onchange="updatePar(${i},this.value)">`;
+    });
+    parRow.innerHTML=html;
+}
+
+function updatePar(i,v){
+    par[i]=Number(v)||4;
+    localStorage.setItem("par",JSON.stringify(par));
+    calc();
+}
+
+function avatar(name){
+    return `<span class="avatar">${name.charAt(0)||'P'}</span>`;
+}
+
+function addPlayer(name=""){
+    let div=document.createElement("div");
+    div.className="card player";
+
+    let holes="";
+    for(let i=0;i<18;i++){
+        holes+=`<input type="number" onchange="save()">`;
+    }
+
+    div.innerHTML=`
+        <input placeholder="Name" value="${name}" onchange="save()">
+        <div class="grid">${holes}</div>
+        <div class="total"></div>
+    `;
+
+    document.getElementById("players").appendChild(div);
+}
+
+function calc(){
+    let players=document.querySelectorAll(".player");
+    let results=[];
+    let holeStats=Array(18).fill(0);
+
+    players.forEach(p=>{
+        let name=p.querySelector("input").value||"Player";
+        let inputs=p.querySelectorAll("input[type=number]");
+        let total=0,diff=0;
+
+        inputs.forEach((i,idx)=>{
+            let v=Number(i.value)||0;
+            total+=v;
+            diff+=(v-par[idx]);
+            holeStats[idx]+= (v-par[idx]);
+        });
+
+        p.querySelector(".total").innerText=`${total} (${diff>=0?'+':''}${diff})`;
+        results.push({name,total,diff});
+    });
+
+    results.sort((a,b)=>a.total-b.total);
+
+    let html="<b>🏆 Leaderboard</b>";
+    results.forEach((r,i)=>{
+        html+=`<div class="rank">
+        <span>${avatar(r.name)}${i+1}. ${r.name}</span>
+        <span>${r.total} (${r.diff>=0?'+':''}${r.diff})</span>
+        </div>`;
+    });
+
+    leaderboard.innerHTML=html;
+
+    drawChart(holeStats);
+}
+
+function save(){
+    let data=[];
+    document.querySelectorAll(".player").forEach(p=>{
+        let name=p.querySelector("input").value;
+        let scores=[];
+        p.querySelectorAll("input[type=number]").forEach(i=>scores.push(i.value));
+        data.push({name,scores});
+    });
+    localStorage.setItem("golfData",JSON.stringify(data));
+    calc();
+}
+
+function loadFromURL(){
+    let params=new URLSearchParams(location.search);
+    let data=params.get("data");
+    if(!data) return false;
+    try{
+        let decoded=JSON.parse(atob(data));
+        localStorage.setItem("par",JSON.stringify(decoded.par));
+        localStorage.setItem("golfData",JSON.stringify(decoded.players));
+        return true;
+    }catch(e){return false;}
+}
+
+function load(){
+    loadFromURL();
+    renderPar();
+
+    let data=JSON.parse(localStorage.getItem("golfData"))||[];
+    data.forEach(d=>{
+        addPlayer(d.name);
+        let players=document.querySelectorAll(".player");
+        let p=players[players.length-1];
+        p.querySelectorAll("input[type=number]").forEach((i,idx)=>{
+            i.value=d.scores[idx];
+        });
+    });
+
+    if(data.length===0)addPlayer();
+    calc();
+}
+
+function drawChart(data){
+    new Chart(document.getElementById("chart"),{
+        type:"bar",
+        data:{
+            labels:[...Array(18).keys()].map(i=>"H"+(i+1)),
+            datasets:[{label:"+/-",data}]
+        }
+    });
+}
+
+function share(){
+    let results=[];
+    document.querySelectorAll(".player").forEach(p=>{
+        let name=p.querySelector("input").value||"Player";
+        let total=0;
+        p.querySelectorAll("input[type=number]").forEach(i=>{
+            total+=Number(i.value)||0;
+        });
+        results.push({name,total});
+    });
+
+    results.sort((a,b)=>a.total-b.total);
+
+    let html="";
+    results.forEach((r,i)=>{
+        html+=`<div style="display:flex;justify-content:space-between;padding:6px 0;">
+        <span>${i+1}. ${r.name}</span>
+        <span>${r.total}</span>
+        </div>`;
+    });
+
+    shareContent.innerHTML=html;
+
+    html2canvas(document.getElementById("shareCard")).then(canvas=>{
+        let link=document.createElement("a");
+        link.download="golf.png";
+        link.href=canvas.toDataURL();
+        link.click();
+    });
+}
+
+function generateLink(){
+    let data=[];
+    document.querySelectorAll(".player").forEach(p=>{
+        let name=p.querySelector("input").value||"Player";
+        let scores=[];
+        p.querySelectorAll("input[type=number]").forEach(i=>{
+            scores.push(i.value||0);
+        });
+        data.push({name,scores});
+    });
+
+    let payload={par,players:data};
+    let encoded=btoa(JSON.stringify(payload));
+
+    let url=location.origin+location.pathname+"?data="+encoded;
+
+    prompt("复制这个链接发微信👇",url);
+}
+
+load();
+</script>
+
+</body>
+</html>
